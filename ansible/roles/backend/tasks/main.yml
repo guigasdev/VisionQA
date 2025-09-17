@@ -1,0 +1,63 @@
+---
+- name: Atualizar cache apt
+  apt:
+    update_cache: yes
+
+- name: Instalar pacotes base
+  apt:
+    name:
+      - python3
+      - python3-pip
+      - docker.io
+      - docker-compose
+    state: present
+
+- name: Adicionar usuário ao grupo docker
+  user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: yes
+
+- name: Criar diretório da aplicação
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Copiar backend (Dockerfile e src)
+  synchronize:
+    src: "{{ playbook_dir }}/../../backend/"
+    dest: "{{ app_dir }}/backend/"
+    rsync_opts:
+      - "--delete"
+  delegate_to: localhost
+
+- name: Copiar frontend (Dockerfile e src)
+  synchronize:
+    src: "{{ playbook_dir }}/../../frontend/"
+    dest: "{{ app_dir }}/frontend/"
+    rsync_opts:
+      - "--delete"
+  delegate_to: localhost
+
+- name: Gerar .env do backend/frontend
+  template:
+    src: "../roles/backend/templates/env.j2"
+    dest: "{{ app_dir }}/.env"
+    mode: "0600"
+
+- name: Subir backend com Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}/backend"
+    env_files:
+      - "{{ app_dir }}/.env"
+    state: present
+
+- name: Subir frontend com Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}/frontend"
+    env_files:
+      - "{{ app_dir }}/.env"
+    state: present 

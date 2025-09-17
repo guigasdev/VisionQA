@@ -1,0 +1,8 @@
+---
+- name: Provisionar backend VisionQA
+  hosts: backend
+  become: true
+  vars:
+    app_dir: /opt/visionqa
+  roles:
+    - backend 

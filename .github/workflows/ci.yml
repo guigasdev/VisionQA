@@ -1,0 +1,93 @@
+name: CI-CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      vm_ip: ${{ steps.tf.outputs.vm_ip }}
+      cv_endpoint: ${{ steps.tf.outputs.cv_endpoint }}
+      cv_key: ${{ steps.tf.outputs.cv_key }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Terraform Init
+        working-directory: infrastructure/terraform
+        run: terraform init
+      - name: Terraform Plan
+        working-directory: infrastructure/terraform
+        run: terraform plan -out=tfplan
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        working-directory: infrastructure/terraform
+        run: terraform apply -auto-approve tfplan
+      - name: Terraform Outputs
+        id: tf
+        working-directory: infrastructure/terraform
+        run: |
+          echo "vm_ip=$(terraform output -raw vm_public_ip)" >> $GITHUB_OUTPUT
+          echo "cv_endpoint=$(terraform output -raw azure_cv_endpoint)" >> $GITHUB_OUTPUT
+          echo "cv_key=$(terraform output -raw azure_cv_key)" >> $GITHUB_OUTPUT
+
+  provision:
+    needs: terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible ansible-lint
+          ansible-galaxy collection install community.docker
+      - name: Create SSH key file
+        run: |
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > key.pem
+          chmod 600 key.pem
+      - name: Run Ansible
+        working-directory: ansible
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'False'
+        run: |
+          ansible-playbook -i inventory.ini playbook.yml \
+            -e vm_public_ip=${{ needs.terraform.outputs.vm_ip }} \
+            -e vm_admin_username=${{ secrets.VM_ADMIN_USERNAME }} \
+            -e ssh_private_key_path=../key.pem \
+            -e openai_api_key='${{ secrets.OPENAI_API_KEY }}' \
+            -e azure_openai_endpoint='${{ secrets.AZURE_OPENAI_ENDPOINT }}' -e azure_openai_api_key='${{ secrets.AZURE_OPENAI_API_KEY }}' -e azure_openai_deployment='${{ secrets.AZURE_OPENAI_DEPLOYMENT }}' \
+            -e azure_cv_endpoint='${{ needs.terraform.outputs.cv_endpoint }}' -e azure_cv_key='${{ needs.terraform.outputs.cv_key }}' \
+            -e app_port=8000 -e app_env=prod -e app_dir=/opt/visionqa -e app_frontend_port=3000 \
+            -e openai_model='gpt-4o-mini' -e next_public_backend_url='http://${{ needs.terraform.outputs.vm_ip }}:8000'
+
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backend TS - Install and Build
+        working-directory: backend
+        run: |
+          npm ci || npm install
+          npm run build
+      - name: Frontend - Install and Build
+        working-directory: frontend
+        run: |
+          corepack enable
+          npm ci || npm install
+          npm run build 

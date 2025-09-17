@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  api:
+    build: .
+    container_name: visionqa-backend
+    env_file:
+      - ../.env
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    restart: unless-stopped
+    volumes:
+      - ./:/app 

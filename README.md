@@ -70,24 +70,10 @@ Este diagrama detalha a interação entre o frontend, backend e os serviços ext
 
 ```mermaid
 graph TD
-    subgraph "Cliente"
-        A[Navegador do Usuário]
-    end
-
-    subgraph "Serviços da Aplicação"
-        B[Frontend - Next.js on Azure Container App]
-        C[Backend - Fastify on Azure Container App]
-    end
-
-    subgraph "Serviços de Nuvem Externos"
-        D[Azure Computer Vision (OCR)]
-        E[OpenAI / Azure OpenAI (LLM)]
-    end
-
-    A -- Requisição HTTP --> B;
-    B -- Chamada de API REST --> C;
-    C -- Extração de Texto --> D;
-    C -- Geração de Resposta --> E;
+    A[Usuário no Navegador] --> B[Frontend: Next.js];
+    B -- API REST --> C[Backend: Fastify];
+    C -- OCR --> D[Azure Computer Vision];
+    C -- Q&A --> E[OpenAI / Azure OpenAI];
 ```
 
 ### Arquitetura de Nuvem (Azure)
